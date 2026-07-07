@@ -1,0 +1,11 @@
+[MAIN]
+py-version = 3.6
+fail-under = 9.0
+
+[FORMAT]
+max-line-length=120
+good-names=mu,df,p0
+
+[MESSAGES CONTROL]
+disable=
+  no-else-return

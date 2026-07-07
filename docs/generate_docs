@@ -1,0 +1,4 @@
+#!/bin/bash
+
+sphinx-apidoc -o modules/ ../src/crudo/ --separate
+make html

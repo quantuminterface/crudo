@@ -1,0 +1,128 @@
+variables:
+    GIT_SUBMODULE_STRATEGY: "recursive"
+    GIT_SUBMODULE_FORCE_HTTPS: "true"
+    GIT_DEPTH: "3"
+    UV_VERSION: '0.9'
+    PYTHON_VERSION: '3.10'
+    BASE_LAYER: bookworm
+    UV_SYSTEM_PYTHON: 1
+    GITHUB_PUBLISH_USER: quantuminterfaceBot
+    GITHUB_PUBLISH_REPO: quantuminterface/crudo
+
+include:
+  - component: $CI_SERVER_FQDN/kit/ipe-sdr/ipe-sdr-dev/sdr-cicd-catalog/publish-sdr-pypi@v0.0.4
+
+before_script:
+  - pip install -U .
+  - pip install -r requirements-dev.txt
+
+stages:
+  - analysis
+  - build
+  - production
+  - deploy
+
+check_format:
+  stage: analysis
+  image: python:3.9
+  variables:
+    PRE_COMMIT_HOME: ${CI_PROJECT_DIR}/.cache/pre-commit
+  cache:
+    paths:
+      - ${PRE_COMMIT_HOME}
+  script:
+    - pre-commit run --all-files
+
+
+pylint:
+  stage: analysis
+  image: python:3.9
+  script:
+    - mkdir ./pylint
+    - pylint --output-format=text src | tee ./pylint/pylint.log || pylint-exit $?
+    - PYLINT_SCORE=$(sed -n 's/^Your code has been rated at \([-0-9.]*\)\/.*/\1/p' ./pylint/pylint.log)
+    - anybadge --label=Pylint --file=pylint/pylint.svg --value=$PYLINT_SCORE 2=red 4=orange 8=yellow 10=green
+    - echo "Pylint score is $PYLINT_SCORE"
+  artifacts:
+    paths:
+      - ./pylint/
+
+build-docs:
+  stage: build
+  image: python:3.9
+  script:
+      - cd docs/
+      - ./generate_docs
+  artifacts:
+      paths:
+          - docs/_build/
+
+build_project:
+  image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
+  stage: build
+  before_script:
+    - export UV_TOOL_BIN_DIR=/usr/local/bin
+    - cd $CI_PROJECT_DIR
+  script:
+    - uv build
+    - uvx twine check dist/*
+  artifacts:
+    paths:
+      - dist/
+    when: on_success
+
+mirror_to_github:
+  stage: deploy
+  image: python:3.9
+  rules:
+    # Run only for tags matching semver like v1.2.3, v2.0.0-rc.1, v1.0.0+build123, etc.
+    - if: '$CI_COMMIT_TAG =~ /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/'
+  script:
+    - VERSION="$CI_COMMIT_TAG"
+    - echo "Preparing release $VERSION for GitHub mirror"
+
+    # Prepare a clean directory with the repository contents
+    - mkdir ../mirror
+    - git archive "$VERSION" | tar -x -C ../mirror
+    # 'inline' submodules
+    - git submodule foreach 'git archive HEAD | tar -x -C $toplevel/../mirror/$sm_path'
+    - cd ../mirror
+    - git init --initial-branch=main
+
+    # Git Identity
+    - git config user.email "quantuminterface@ipe.kit.edu"
+    - git config user.name "Quantuminterface Bot"
+
+    # Pull existing history from GitHub
+    - git remote add origin "https://${GITHUB_PUBLISH_USER}:${GITHUB_PUBLISH_TOKEN}@github.com/${GITHUB_PUBLISH_REPO}.git"
+    - git fetch origin main
+    - git checkout -B main
+    - git reset --soft origin/main
+
+    # Commit the new release snapshot
+    - git add -A
+    - git commit -m "Release $VERSION"
+
+    # Tag and push both branch and tag
+    - git tag "$VERSION"
+    - git push origin main
+    - git push origin "$VERSION"
+
+publish_to_pypi:
+  stage: deploy
+  image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
+  needs:
+    - build_project
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/'
+  before_script:
+    - export UV_TOOL_BIN_DIR=/usr/local/bin
+    - cd $CI_PROJECT_DIR
+  script:
+    - echo "Publishing version $CI_COMMIT_TAG to PyPI"
+
+    # Build the wheel and sdist
+    - uv build
+
+    # Publish to PyPI
+    - uv publish --token "$PYPI_PUBLISH_TOKEN"

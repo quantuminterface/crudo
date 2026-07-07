@@ -1,0 +1,11 @@
+pre-commit
+black
+pylint
+pylint-exit
+anybadge
+cirque
+pandas
+build
+sphinx
+sphinx_rtd_theme
+furo
