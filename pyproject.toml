@@ -48,7 +48,7 @@ classifiers = [
 dynamic = ["version"]
 
 [project.urls]
-Repository = "https://gitlab.kit.edu/kit/ipe-sdr/software/crudo"
+Repository = "https://github.com/quantuminterface/crudo"
 
 [tool.hatch.version]
 source = "vcs"
