@@ -139,6 +139,9 @@ class ECHoReadoutChain:
             fluxrampdemod.set_bypass_act(1)
             fluxrampdemod.set_fluxramp_length(fluxramp_length)
             fluxrampdemod.set_sync_delay(fluxrampdemod.get_channel_count() * delay)
+            fluxrampdemod.set_accumulation_range(
+                accumulation_range[0], accumulation_range[1]
+            )
 
         for band_index, band_resonators in enumerate(self.resonators):
             for resonator in band_resonators:
